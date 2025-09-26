@@ -98,7 +98,16 @@ def train(config):
             ])
         if task_name == "docvqa":
             model_module.model.decoder.add_special_tokens(["<yes/>", "<no/>"])
-            
+
+        model_module.model.decoder.add_special_tokens([
+                "ả","á","ã","à","ạ","ă","ằ", "ặ", "ẳ","ẵ","ẳ",
+                "â", "ầ", "ấ", "ậ", "ẫ", "ẩ", "ơ","ớ","ờ", "ợ",
+                "ở", "ỡ","ò", "ó","ọ", "ỏ", "õ", "è", "é", "ẹ",
+                "ẻ", "ẽ", "ê","ề","ế","ể", "ễ","ệ", "ô","ồ","ố",
+                "ổ", "ỗ", "ộ","ú", "ù", "ụ", "ủ", "ũ", "ư", "ừ",
+                "ứ", "ữ", "ử", "ự", "í", "ì", "ị", "ỉ", "ĩ", "ý",
+                "ỵ", "ỷ", "ỳ", "ỹ", "đ"
+            ])  
         for split in ["train", "validation"]:
             datasets[split].append(
                 DonutDataset(
