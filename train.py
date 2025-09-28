@@ -38,10 +38,10 @@ class PushToHubCallback(Callback):
         self.push_every_epoch = push_every_epoch
         
         # Login if token provided
-        if token:
-            login(token=token)
-        elif os.getenv("HF_TOKEN"):
-            login(token=os.getenv("HF_TOKEN"))
+        # if token:
+        #     login(token=token)
+        # elif os.getenv("HF_TOKEN_GIT"):
+        #     login(token=os.getenv("HF_TOKEN_GIT"))
     
     def on_train_epoch_end(self, trainer, pl_module):
         # Only push every epoch if explicitly enabled (can be slow for large models)
@@ -90,7 +90,7 @@ class PushToHubCallback(Callback):
 push_callback = PushToHubCallback(
     repo_name="KhanhLT26/donut_new",
     push_every_epoch=False,  # Only push at the end
-    token="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"  # Optional if using HF_TOKEN env var
+    # token="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"  # Optional if using HF_TOKEN env var
 )
 
 class CustomCheckpointIO(CheckpointIO):
