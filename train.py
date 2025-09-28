@@ -23,7 +23,75 @@ from sconf import Config
 
 from donut import DonutDataset
 from lightning_module import DonutDataPLModule, DonutModelPLModule
+from pytorch_lightning.callbacks import Callback
+from huggingface_hub import login
 
+class PushToHubCallback(Callback):
+    def __init__(self, repo_name, push_every_epoch=False, token=None):
+        """
+        Args:
+            repo_name: HuggingFace repository name (e.g., "username/model-name")
+            push_every_epoch: Whether to push after every epoch (can be slow)
+            token: HuggingFace token (optional, can use HF_TOKEN env var)
+        """
+        self.repo_name = repo_name
+        self.push_every_epoch = push_every_epoch
+        
+        # Login if token provided
+        if token:
+            login(token=token)
+        elif os.getenv("HF_TOKEN"):
+            login(token=os.getenv("HF_TOKEN"))
+    
+    def on_train_epoch_end(self, trainer, pl_module):
+        # Only push every epoch if explicitly enabled (can be slow for large models)
+        if self.push_every_epoch and trainer.global_rank == 0:  # Only push from rank 0
+            try:
+                print(f"Pushing model to hub, epoch {trainer.current_epoch}")
+                pl_module.model.push_to_hub(
+                    self.repo_name,
+                    commit_message=f"Training in progress, epoch {trainer.current_epoch}",
+                    private=False  # Set to True if you want private repo
+                )
+            except Exception as e:
+                print(f"Failed to push model after epoch {trainer.current_epoch}: {e}")
+
+    def on_train_end(self, trainer, pl_module):
+        # Only push from main process
+        if trainer.global_rank == 0:
+            try:
+                print("Pushing final model to hub after training completion")
+                
+                # Push processor first
+                if hasattr(pl_module, 'processor') and pl_module.processor is not None:
+                    pl_module.processor.push_to_hub(
+                        self.repo_name,
+                        commit_message="Training completed - Final processor"
+                    )
+                
+                # Push model
+                pl_module.model.push_to_hub(
+                    self.repo_name,
+                    commit_message="Training completed - Final model"
+                )
+                
+                print(f"✅ Model successfully pushed to: https://huggingface.co/{self.repo_name}")
+                
+            except Exception as e:
+                print(f"❌ Failed to push final model: {e}")
+                # You might want to save locally as backup
+                try:
+                    backup_path = f"./backup_model_epoch_{trainer.current_epoch}"
+                    pl_module.model.save_pretrained(backup_path)
+                    print(f"💾 Model saved locally as backup at: {backup_path}")
+                except Exception as backup_error:
+                    print(f"❌ Failed to save backup: {backup_error}")
+
+push_callback = PushToHubCallback(
+    repo_name="KhanhLT26/donut_new",
+    push_every_epoch=False,  # Only push at the end
+    token="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"  # Optional if using HF_TOKEN env var
+)
 
 class CustomCheckpointIO(CheckpointIO):
     def save_checkpoint(self, checkpoint, path, storage_options=None):
@@ -163,7 +231,7 @@ def train(config):
         precision=16,
         num_sanity_val_steps=0,
         logger=logger,
-        callbacks=[lr_callback, checkpoint_callback, bar],
+        callbacks=[push_callback,lr_callback, checkpoint_callback, bar],
     )
 
     trainer.fit(model_module, data_module, ckpt_path=config.get("resume_from_checkpoint_path", None))
