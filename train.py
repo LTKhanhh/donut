@@ -172,7 +172,7 @@ def train(config):
     save_dir.mkdir(parents=True, exist_ok=True)
 
     model_module.model.save_pretrained(save_dir)
-    model_module.processor.save_pretrained(save_dir)
+    model_module.model.decoder.tokenizer.save_pretrained(save_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
