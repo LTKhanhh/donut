@@ -168,7 +168,11 @@ def train(config):
     )
 
     trainer.fit(model_module, data_module, ckpt_path=config.get("resume_from_checkpoint_path", None))
+    save_dir = Path(config.result_path) / config.exp_name / config.exp_version / "hf_model"
+    save_dir.mkdir(parents=True, exist_ok=True)
 
+    model_module.model.save_pretrained(save_dir)
+    model_module.processor.save_pretrained(save_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
