@@ -125,10 +125,10 @@ def train(config):
         "Ứ", "Ữ", "Ử", "Ự", "Í", "Ì", "Ị", "Ỉ", "Ĩ", "Ý",
         "Ỵ", "Ỷ", "Ỳ", "Ỹ", "Đ"
         ]
-        model_module.processor.tokenizer.add_tokens(vietnamese_chars)
+        model_module.model.decoder.add_special_tokens(vietnamese_chars)
 
         model_module.model.decoder.resize_token_embeddings(len(model_module.processor.tokenizer))
-        
+
         for split in ["train", "validation"]:
             datasets[split].append(
                 DonutDataset(
