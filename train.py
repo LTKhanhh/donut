@@ -100,15 +100,35 @@ def train(config):
         if task_name == "docvqa":
             model_module.model.decoder.add_special_tokens(["<yes/>", "<no/>"])
 
-        model_module.model.decoder.add_special_tokens([
-                "ả","á","ã","à","ạ","ă","ằ", "ặ", "ẳ","ẵ","ẳ",
-                "â", "ầ", "ấ", "ậ", "ẫ", "ẩ", "ơ","ớ","ờ", "ợ",
-                "ở", "ỡ","ò", "ó","ọ", "ỏ", "õ", "è", "é", "ẹ",
-                "ẻ", "ẽ", "ê","ề","ế","ể", "ễ","ệ", "ô","ồ","ố",
-                "ổ", "ỗ", "ộ","ú", "ù", "ụ", "ủ", "ũ", "ư", "ừ",
-                "ứ", "ữ", "ử", "ự", "í", "ì", "ị", "ỉ", "ĩ", "ý",
-                "ỵ", "ỷ", "ỳ", "ỹ", "đ",
-            ])  
+        # model_module.model.decoder.add_special_tokens([
+        #         "ả","á","ã","à","ạ","ă","ằ", "ặ", "ẳ","ẵ","ẳ",
+        #         "â", "ầ", "ấ", "ậ", "ẫ", "ẩ", "ơ","ớ","ờ", "ợ",
+        #         "ở", "ỡ","ò", "ó","ọ", "ỏ", "õ", "è", "é", "ẹ",
+        #         "ẻ", "ẽ", "ê","ề","ế","ể", "ễ","ệ", "ô","ồ","ố",
+        #         "ổ", "ỗ", "ộ","ú", "ù", "ụ", "ủ", "ũ", "ư", "ừ",
+        #         "ứ", "ữ", "ử", "ự", "í", "ì", "ị", "ỉ", "ĩ", "ý",
+        #         "ỵ", "ỷ", "ỳ", "ỹ", "đ",
+        #     ])  
+        vietnamese_chars = [
+        "ả","á","ã","à","ạ","ă","ằ", "ặ", "ẳ","ẵ",
+        "â", "ầ", "ấ", "ậ", "ẫ", "ẩ", "ơ","ớ","ờ", "ợ",
+        "ở", "ỡ","ò", "ó","ọ", "ỏ", "õ", "è", "é", "ẹ",
+        "ẻ", "ẽ", "ê","ề","ế","ể", "ễ","ệ", "ô","ồ","ố",
+        "ổ", "ỗ", "ộ","ú", "ù", "ụ", "ủ", "ũ", "ư", "ừ",
+        "ứ", "ữ", "ử", "ự", "í", "ì", "ị", "ỉ", "ĩ", "ý",
+        "ỵ", "ỷ", "ỳ", "ỹ", "đ",
+        "Ả","Á","Ã","À","Ạ","Ă","Ằ", "Ặ", "Ẳ","Ẵ",
+        "Â", "Ầ", "Ấ", "Ậ", "Ẫ", "Ẩ", "Ơ","Ớ","Ờ", "Ợ",
+        "Ở", "Ỡ","Ò", "Ó","Ọ", "Ỏ", "Õ", "È", "É", "Ẹ",
+        "Ẻ", "Ẽ", "Ê","Ề","Ế","Ể", "Ễ","Ệ", "Ô","Ồ","Ố",
+        "Ổ", "Ỗ", "Ộ","Ú", "Ù", "Ụ", "Ủ", "Ũ", "Ư", "Ừ",
+        "Ứ", "Ữ", "Ử", "Ự", "Í", "Ì", "Ị", "Ỉ", "Ĩ", "Ý",
+        "Ỵ", "Ỷ", "Ỳ", "Ỹ", "Đ"
+        ]
+        model_module.processor.tokenizer.add_tokens(vietnamese_chars)
+
+        model_module.model.decoder.resize_token_embeddings(len(model_module.processor.tokenizer))
+        
         for split in ["train", "validation"]:
             datasets[split].append(
                 DonutDataset(
@@ -168,11 +188,6 @@ def train(config):
     )
 
     trainer.fit(model_module, data_module, ckpt_path=config.get("resume_from_checkpoint_path", None))
-    save_dir = Path(config.result_path) / config.exp_name / config.exp_version / "hf_model"
-    save_dir.mkdir(parents=True, exist_ok=True)
-
-    model_module.model.save_pretrained(save_dir)
-    model_module.model.decoder.tokenizer.save_pretrained(save_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
