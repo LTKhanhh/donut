@@ -109,26 +109,17 @@ def train(config):
         #         "ứ", "ữ", "ử", "ự", "í", "ì", "ị", "ỉ", "ĩ", "ý",
         #         "ỵ", "ỷ", "ỳ", "ỹ", "đ",
         #     ])  
-        vietnamese_chars = [
-        "ả","á","ã","à","ạ","ă","ằ", "ặ", "ẳ","ẵ",
-        "â", "ầ", "ấ", "ậ", "ẫ", "ẩ", "ơ","ớ","ờ", "ợ",
-        "ở", "ỡ","ò", "ó","ọ", "ỏ", "õ", "è", "é", "ẹ",
-        "ẻ", "ẽ", "ê","ề","ế","ể", "ễ","ệ", "ô","ồ","ố",
-        "ổ", "ỗ", "ộ","ú", "ù", "ụ", "ủ", "ũ", "ư", "ừ",
-        "ứ", "ữ", "ử", "ự", "í", "ì", "ị", "ỉ", "ĩ", "ý",
-        "ỵ", "ỷ", "ỳ", "ỹ", "đ",
-        "Ả","Á","Ã","À","Ạ","Ă","Ằ", "Ặ", "Ẳ","Ẵ",
-        "Â", "Ầ", "Ấ", "Ậ", "Ẫ", "Ẩ", "Ơ","Ớ","Ờ", "Ợ",
-        "Ở", "Ỡ","Ò", "Ó","Ọ", "Ỏ", "Õ", "È", "É", "Ẹ",
-        "Ẻ", "Ẽ", "Ê","Ề","Ế","Ể", "Ễ","Ệ", "Ô","Ồ","Ố",
-        "Ổ", "Ỗ", "Ộ","Ú", "Ù", "Ụ", "Ủ", "Ũ", "Ư", "Ừ",
-        "Ứ", "Ữ", "Ử", "Ự", "Í", "Ì", "Ị", "Ỉ", "Ĩ", "Ý",
-        "Ỵ", "Ỷ", "Ỳ", "Ỹ", "Đ"
-        ]
-        model_module.model.decoder.add_special_tokens(vietnamese_chars)
-
-        model_module.model.decoder.resize_token_embeddings(len(model_module.processor.tokenizer))
-
+        model_module.model.decoder.add_special_tokens([
+                "Công", "cổ", "Nguyễn", "Thị", "Trần", "Hà", "Hồ", "Phạm", "Vũ", "Lê",
+                "Đặng", "Bùi", "Đỗ", "Hà", "Dương", "Lý", "Đoàn", "Lâm", "Tạ", "Quách",
+                "Phương", "xây", "dựng", "kiến", "trúc", "Việt", "Nam", "Hà", "Nội",
+                "TP", "HCM", "Đà", "Nẵng", "Cần", "Thơ", "Nghệ", "An", "Hải", "Phòng",
+                "Bắc", "Giang", "Hưng", "Yên", "Phú", "Thọ", "Vĩnh", "Phúc", "Thái", "Bình",
+                "Quảng", "Ninh", "Thanh", "Hóa", "Ninh", "Bình", "Định", "Khánh", "Hòa",
+                "Phú", "Yên", "Bình", "Định", "KonTum", "Gia", "Lai", "Đắk", "Lắk", "Lào", "Cai",
+                "Đắk", "Nông", "Bình", "Phước", "Tây", "Ninh", "Bình", "Dương", "Đồng", "Nai", "Long", "An" 
+            ])  
+    
         for split in ["train", "validation"]:
             datasets[split].append(
                 DonutDataset(
