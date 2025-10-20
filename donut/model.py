@@ -115,10 +115,14 @@ class BARTDecoder(nn.Module):
         self.decoder_layer = decoder_layer
         self.max_position_embeddings = max_position_embeddings
 
+        # ================== SỬA LỖI LOGIC TẠI ĐÂY ==================
+        # Xử lý trường hợp `name_or_path` là chuỗi rỗng "" từ config của donut-base.
+        # Đảm bảo nó luôn mặc định là "vinai/bartpho-word" trong trường hợp này.
         if not name_or_path or name_or_path == "":
              self.name_or_path = "vinai/bartpho-word"
         else:
              self.name_or_path = name_or_path
+        # ==========================================================
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.name_or_path)
         bart_config = MBartConfig.from_pretrained(self.name_or_path)
@@ -434,18 +438,19 @@ class DonutModel(PreTrainedModel):
         *model_args,
         **kwargs,
     ):
-        # ================== SỬA LỖI TypeError TẠI ĐÂY ==================
-        # Đặt giá trị `ignore_mismatched_sizes` vào trong kwargs.
-        # Thao tác này đảm bảo tham số chỉ được truyền một lần duy nhất,
-        # ngay cả khi nó được gọi từ một file khác.
+        # ================== SỬA LỖI TypeError VÀ size mismatch TẠI ĐÂY ==================
+        # 1. Đặt `ignore_mismatched_sizes=True` vào kwargs một cách an toàn.
+        #    Thao tác này đảm bảo tham số chỉ được truyền một lần duy nhất.
         kwargs['ignore_mismatched_sizes'] = True
         
+        # 2. Gọi hàm from_pretrained của class cha.
+        #    Lệnh này sẽ tải trọng số của Encoder, và bỏ qua trọng số của Decoder cũ do không khớp size.
         model = super(DonutModel, cls).from_pretrained(
             pretrained_model_name_or_path, 
             *model_args,
             **kwargs
         )
-        # =============================================================
+        # ==============================================================================
 
         max_length = kwargs.get("max_length", model.config.max_position_embeddings)
         if (
