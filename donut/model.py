@@ -1,8 +1,10 @@
-"""
-Donut
-Copyright (c) 2022-present NAVER Corp.
-MIT License
-"""
+# Donut
+# Copyright (c) 2022-present NAVER Corp.
+# MIT License
+#
+# Dưới đây là file đã được chỉnh sửa để sử dụng mô hình pre-train tiếng Việt.
+# Các thay đổi chính được thực hiện trong class BARTDecoder.
+
 import math
 import os
 import re
@@ -19,7 +21,10 @@ from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.swin_transformer import SwinTransformer
 from torchvision import transforms
 from torchvision.transforms.functional import resize, rotate
-from transformers import MBartConfig, MBartForCausalLM, XLMRobertaTokenizer
+# ================= THAY ĐỔI 1: THÊM IMPORT MỚI =================
+# Thêm AutoTokenizer để tự động tải tokenizer tương thích với mô hình tiếng Việt.
+from transformers import MBartConfig, MBartForCausalLM, XLMRobertaTokenizer, AutoTokenizer
+# ===============================================================
 from transformers.file_utils import ModelOutput
 from transformers.modeling_utils import PretrainedConfig, PreTrainedModel
 
@@ -147,7 +152,7 @@ class BARTDecoder(nn.Module):
             The maximum sequence length to be trained
         name_or_path:
             Name of a pretrained model name either registered in huggingface.co. or saved in local,
-            otherwise, `hyunwoongko/asian-bart-ecjk` will be set (using `transformers`)
+            otherwise, `vinai/bartpho-word` will be set (using `transformers`)
     """
 
     def __init__(
@@ -157,9 +162,15 @@ class BARTDecoder(nn.Module):
         self.decoder_layer = decoder_layer
         self.max_position_embeddings = max_position_embeddings
 
-        self.tokenizer = XLMRobertaTokenizer.from_pretrained(
-            "hyunwoongko/asian-bart-ecjk" if not name_or_path else name_or_path
-        )
+        # ================= THAY ĐỔI 2: CHỈNH SỬA TÊN MÔ HÌNH VÀ TOKENIZER =================
+        # Đặt mô hình tiếng Việt làm mặc định nếu không có mô hình nào khác được cung cấp.
+        # Sử dụng vinai/bartpho-word, một mô hình mạnh mẽ cho tiếng Việt.
+        self.name_or_path = "vinai/bartpho-word" if not name_or_path else name_or_path
+
+        # Sử dụng AutoTokenizer để nó tự động chọn class Tokenizer phù hợp (trong trường hợp này là RobertaTokenizer).
+        # Điều này giúp đảm bảo tương thích và xử lý đúng các từ/âm tiết tiếng Việt.
+        self.tokenizer = AutoTokenizer.from_pretrained(self.name_or_path)
+        # ===================================================================================
 
         self.model = MBartForCausalLM(
             config=MBartConfig(
@@ -169,6 +180,13 @@ class BARTDecoder(nn.Module):
                 decoder_layers=self.decoder_layer,
                 max_position_embeddings=self.max_position_embeddings,
                 vocab_size=len(self.tokenizer),
+                # Các thông số config của BARTpho
+                d_model=768 if "base" in self.name_or_path else 1024,
+                encoder_attention_heads=12 if "base" in self.name_or_path else 16,
+                decoder_attention_heads=12 if "base" in self.name_or_path else 16,
+                encoder_ffn_dim=3072 if "base" in self.name_or_path else 4096,
+                decoder_ffn_dim=3072 if "base" in self.name_or_path else 4096,
+                # =================================
                 scale_embedding=True,
                 add_final_layer_norm=True,
             )
@@ -180,24 +198,33 @@ class BARTDecoder(nn.Module):
         self.model.model.decoder.embed_tokens.padding_idx = self.tokenizer.pad_token_id
         self.model.prepare_inputs_for_generation = self.prepare_inputs_for_inference
 
-        # weight init with asian-bart
-        if not name_or_path:
-            bart_state_dict = MBartForCausalLM.from_pretrained("hyunwoongko/asian-bart-ecjk").state_dict()
-            new_bart_state_dict = self.model.state_dict()
-            for x in new_bart_state_dict:
-                if x.endswith("embed_positions.weight") and self.max_position_embeddings != 1024:
-                    new_bart_state_dict[x] = torch.nn.Parameter(
-                        self.resize_bart_abs_pos_emb(
-                            bart_state_dict[x],
-                            self.max_position_embeddings
-                            + 2,  # https://github.com/huggingface/transformers/blob/v4.11.3/src/transformers/models/mbart/modeling_mbart.py#L118-L119
-                        )
+        # ================= THAY ĐỔI 3: TẢI TRỌNG SỐ (WEIGHTS) TỪ MÔ HÌNH TIẾNG VIỆT =================
+        # Logic này sẽ tải trọng số từ mô hình bartpho và khớp chúng vào kiến trúc decoder của Donut.
+        # Nó chỉ copy những layer có tên và kích thước khớp nhau, giúp tránh lỗi không tương thích.
+        print(f"Initializing Donut decoder from pretrained BART model ({self.name_or_path})")
+        bart_state_dict = MBartForCausalLM.from_pretrained(self.name_or_path).state_dict()
+        new_bart_state_dict = self.model.state_dict()
+        for x in new_bart_state_dict:
+            if x.endswith("embed_positions.weight") and self.max_position_embeddings != 1024:
+                 # Resize a position embedding matrix if the sequence length is different.
+                new_bart_state_dict[x] = torch.nn.Parameter(
+                    self.resize_bart_abs_pos_emb(
+                        bart_state_dict[x],
+                        self.max_position_embeddings
+                        + 2,
                     )
-                elif x.endswith("embed_tokens.weight") or x.endswith("lm_head.weight"):
+                )
+            elif x.endswith("embed_tokens.weight") or x.endswith("lm_head.weight"):
+                # Resize a token embedding matrix if the vocabulary size is different.
+                if new_bart_state_dict[x].shape[0] != len(self.tokenizer):
                     new_bart_state_dict[x] = bart_state_dict[x][: len(self.tokenizer), :]
                 else:
                     new_bart_state_dict[x] = bart_state_dict[x]
-            self.model.load_state_dict(new_bart_state_dict)
+            elif x in bart_state_dict and new_bart_state_dict[x].shape == bart_state_dict[x].shape:
+                 # Load a weight matrix if the name and shape are the same.
+                new_bart_state_dict[x] = bart_state_dict[x]
+        self.model.load_state_dict(new_bart_state_dict, strict=False)
+        # =========================================================================================
 
     def add_special_tokens(self, list_of_tokens: List[str]):
         """
@@ -393,7 +420,11 @@ class DonutModel(PreTrainedModel):
         self.decoder = BARTDecoder(
             max_position_embeddings=self.config.max_position_embeddings,
             decoder_layer=self.config.decoder_layer,
+            # ================= THAY ĐỔI 4: TRUYỀN TÊN MÔ HÌNH VÀO DECODER =================
+            # Đảm bảo rằng tên mô hình từ config được truyền vào BARTDecoder
+            # để nó có thể tải đúng mô hình pre-train tiếng Việt.
             name_or_path=self.config.name_or_path,
+            # ==============================================================================
         )
 
     def forward(self, image_tensors: torch.Tensor, decoder_input_ids: torch.Tensor, decoder_labels: torch.Tensor):
@@ -594,7 +625,7 @@ class DonutModel(PreTrainedModel):
                 Name of a pretrained model name either registered in huggingface.co. or saved in local,
                 e.g., `naver-clova-ix/donut-base`, or `naver-clova-ix/donut-base-finetuned-rvlcdip`
         """
-        model = super(DonutModel, cls).from_pretrained(pretrained_model_name_or_path, revision="official", *model_args, **kwargs)
+        model = super(DonutModel, cls).from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
 
         # truncate or interplolate position embeddings of donut decoder
         max_length = kwargs.get("max_length", model.config.max_position_embeddings)
@@ -605,7 +636,7 @@ class DonutModel(PreTrainedModel):
                 model.decoder.resize_bart_abs_pos_emb(
                     model.decoder.model.model.decoder.embed_positions.weight,
                     max_length
-                    + 2,  # https://github.com/huggingface/transformers/blob/v4.11.3/src/transformers/models/mbart/modeling_mbart.py#L118-L119
+                    + 2,
                 )
             )
             model.config.max_position_embeddings = max_length
