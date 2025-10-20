@@ -114,7 +114,15 @@ class BARTDecoder(nn.Module):
         super().__init__()
         self.decoder_layer = decoder_layer
         self.max_position_embeddings = max_position_embeddings
-        self.name_or_path = "vinai/bartpho-word" if not name_or_path else name_or_path
+
+        # ================== SỬA LỖI LOGIC TẠI ĐÂY ==================
+        # Xử lý trường hợp `name_or_path` là chuỗi rỗng "" từ config của donut-base.
+        # Đảm bảo nó luôn mặc định là "vinai/bartpho-word" trong trường hợp này.
+        if not name_or_path or name_or_path == "":
+             self.name_or_path = "vinai/bartpho-word"
+        else:
+             self.name_or_path = name_or_path
+        # ==========================================================
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.name_or_path)
         bart_config = MBartConfig.from_pretrained(self.name_or_path)
