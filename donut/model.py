@@ -1,10 +1,8 @@
-# Donut
-# Copyright (c) 2022-present NAVER Corp.
-# MIT License
-#
-# Dưới đây là file đã được chỉnh sửa để sử dụng mô hình pre-train tiếng Việt.
-# Các thay đổi chính được thực hiện trong class BARTDecoder.
-
+"""
+Donut
+Copyright (c) 2022-present NAVER Corp.
+MIT License
+"""
 import math
 import os
 import re
@@ -23,7 +21,7 @@ from torchvision import transforms
 from torchvision.transforms.functional import resize, rotate
 # ================= THAY ĐỔI 1: THÊM IMPORT MỚI =================
 # Thêm AutoTokenizer để tự động tải tokenizer tương thích với mô hình tiếng Việt.
-from transformers import MBartConfig, MBartForCausalLM, XLMRobertaTokenizer, AutoTokenizer
+from transformers import MBartConfig, MBartForCausalLM, AutoTokenizer
 # ===============================================================
 from transformers.file_utils import ModelOutput
 from transformers.modeling_utils import PretrainedConfig, PreTrainedModel
@@ -162,69 +160,54 @@ class BARTDecoder(nn.Module):
         self.decoder_layer = decoder_layer
         self.max_position_embeddings = max_position_embeddings
 
-        # ================= THAY ĐỔI 2: CHỈNH SỬA TÊN MÔ HÌNH VÀ TOKENIZER =================
-        # Đặt mô hình tiếng Việt làm mặc định nếu không có mô hình nào khác được cung cấp.
-        # Sử dụng vinai/bartpho-word, một mô hình mạnh mẽ cho tiếng Việt.
+        # ==================== PHẦN SỬA ĐỔI QUAN TRỌNG BẮT ĐẦU TẠI ĐÂY ====================
+
+        # Sử dụng `vinai/bartpho-word` làm mô hình mặc định cho tiếng Việt
         self.name_or_path = "vinai/bartpho-word" if not name_or_path else name_or_path
 
-        # Sử dụng AutoTokenizer để nó tự động chọn class Tokenizer phù hợp (trong trường hợp này là RobertaTokenizer).
-        # Điều này giúp đảm bảo tương thích và xử lý đúng các từ/âm tiết tiếng Việt.
+        # 1. Tải tokenizer chuyên dụng cho tiếng Việt
+        # AutoTokenizer sẽ tự động chọn lớp tokenizer phù hợp.
         self.tokenizer = AutoTokenizer.from_pretrained(self.name_or_path)
-        # ===================================================================================
 
-        self.model = MBartForCausalLM(
-            config=MBartConfig(
-                is_decoder=True,
-                is_encoder_decoder=False,
-                add_cross_attention=True,
-                decoder_layers=self.decoder_layer,
-                max_position_embeddings=self.max_position_embeddings,
-                vocab_size=len(self.tokenizer),
-                # Các thông số config của BARTpho
-                d_model=768 if "base" in self.name_or_path else 1024,
-                encoder_attention_heads=12 if "base" in self.name_or_path else 16,
-                decoder_attention_heads=12 if "base" in self.name_or_path else 16,
-                encoder_ffn_dim=3072 if "base" in self.name_or_path else 4096,
-                decoder_ffn_dim=3072 if "base" in self.name_or_path else 4096,
-                # =================================
-                scale_embedding=True,
-                add_final_layer_norm=True,
-            )
-        )
-        self.model.forward = self.forward  #  to get cross attentions and utilize `generate` function
+        # 2. Tải cấu hình (config) của mô hình tiếng Việt TRƯỚC TIÊN
+        # Bước này cực kỳ quan trọng để tránh lỗi `size mismatch` vì nó đảm bảo 
+        # các kích thước (d_model, vocab_size,...) là chính xác ngay từ đầu.
+        bart_config = MBartConfig.from_pretrained(self.name_or_path)
 
-        self.model.config.is_encoder_decoder = True  # to get cross-attention
-        self.add_special_tokens(["<sep/>"])  # <sep/> is used for representing a list in a JSON
+        # 3. Tùy chỉnh config cho phù hợp với kiến trúc Decoder của Donut
+        bart_config.is_decoder = True
+        bart_config.is_encoder_decoder = False
+        bart_config.add_cross_attention = True
+        bart_config.decoder_layers = self.decoder_layer
+        bart_config.max_position_embeddings = self.max_position_embeddings
+        
+        # Thêm các token đặc biệt và cập nhật vocab_size trong config
+        self.add_special_tokens(["<sep/>"])
+        bart_config.vocab_size = len(self.tokenizer)
+
+        # 4. Khởi tạo mô hình Decoder với config ĐÃ ĐƯỢC TÙY CHỈNH
+        # `self.model` giờ đây sẽ có kiến trúc tương thích hoàn toàn với trọng số của bartpho-word.
+        self.model = MBartForCausalLM(config=bart_config)
+        self.model.forward = self.forward
+        self.model.config.is_encoder_decoder = True
         self.model.model.decoder.embed_tokens.padding_idx = self.tokenizer.pad_token_id
         self.model.prepare_inputs_for_generation = self.prepare_inputs_for_inference
-
-        # ================= THAY ĐỔI 3: TẢI TRỌNG SỐ (WEIGHTS) TỪ MÔ HÌNH TIẾNG VIỆT =================
-        # Logic này sẽ tải trọng số từ mô hình bartpho và khớp chúng vào kiến trúc decoder của Donut.
-        # Nó chỉ copy những layer có tên và kích thước khớp nhau, giúp tránh lỗi không tương thích.
-        print(f"Initializing Donut decoder from pretrained BART model ({self.name_or_path})")
+        
+        # 5. Tải trọng số (weights) từ mô hình `vinai/bartpho-word`
+        print(f"Initializing Donut decoder from pretrained BART model: {self.name_or_path}")
         bart_state_dict = MBartForCausalLM.from_pretrained(self.name_or_path).state_dict()
-        new_bart_state_dict = self.model.state_dict()
-        for x in new_bart_state_dict:
-            if x.endswith("embed_positions.weight") and self.max_position_embeddings != 1024:
-                 # Resize a position embedding matrix if the sequence length is different.
-                new_bart_state_dict[x] = torch.nn.Parameter(
-                    self.resize_bart_abs_pos_emb(
-                        bart_state_dict[x],
-                        self.max_position_embeddings
-                        + 2,
-                    )
-                )
-            elif x.endswith("embed_tokens.weight") or x.endswith("lm_head.weight"):
-                # Resize a token embedding matrix if the vocabulary size is different.
-                if new_bart_state_dict[x].shape[0] != len(self.tokenizer):
-                    new_bart_state_dict[x] = bart_state_dict[x][: len(self.tokenizer), :]
-                else:
-                    new_bart_state_dict[x] = bart_state_dict[x]
-            elif x in bart_state_dict and new_bart_state_dict[x].shape == bart_state_dict[x].shape:
-                 # Load a weight matrix if the name and shape are the same.
-                new_bart_state_dict[x] = bart_state_dict[x]
-        self.model.load_state_dict(new_bart_state_dict, strict=False)
-        # =========================================================================================
+        
+        # Thay đổi kích thước của position embedding nếu max_length của bạn khác với mô hình gốc
+        if bart_state_dict["model.decoder.embed_positions.weight"].shape[0] != self.max_position_embeddings + 2:
+            bart_state_dict["model.decoder.embed_positions.weight"] = self.resize_bart_abs_pos_emb(
+                bart_state_dict["model.decoder.embed_positions.weight"],
+                self.max_position_embeddings + 2,
+            )
+        
+        # Nạp trọng số vào mô hình, `strict=False` sẽ bỏ qua các layer không khớp (nếu có)
+        self.model.load_state_dict(bart_state_dict, strict=False)
+
+    # ==================== KẾT THÚC PHẦN SỬA ĐỔI ====================
 
     def add_special_tokens(self, list_of_tokens: List[str]):
         """
@@ -235,15 +218,6 @@ class BARTDecoder(nn.Module):
             self.model.resize_token_embeddings(len(self.tokenizer))
 
     def prepare_inputs_for_inference(self, input_ids: torch.Tensor, encoder_outputs: torch.Tensor, past_key_values=None, past=None, use_cache: bool = None, attention_mask: torch.Tensor = None):
-        """
-        Args:
-            input_ids: (batch_size, sequence_lenth)
-        Returns:
-            input_ids: (batch_size, sequence_length)
-            attention_mask: (batch_size, sequence_length)
-            encoder_hidden_states: (batch_size, sequence_length, embedding_dim)
-        """
-        # for compatibility with transformers==4.11.x
         if past is not None:
             past_key_values = past
         attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long()
@@ -270,24 +244,6 @@ class BARTDecoder(nn.Module):
         output_hidden_states: Optional[torch.Tensor] = None,
         return_dict: bool = None,
     ):
-        """
-        A forward fucntion to get cross attentions and utilize `generate` function
-
-        Source:
-        https://github.com/huggingface/transformers/blob/v4.11.3/src/transformers/models/mbart/modeling_mbart.py#L1669-L1810
-
-        Args:
-            input_ids: (batch_size, sequence_length)
-            attention_mask: (batch_size, sequence_length)
-            encoder_hidden_states: (batch_size, sequence_length, hidden_size)
-
-        Returns:
-            loss: (1, )
-            logits: (batch_size, sequence_length, hidden_dim)
-            hidden_states: (batch_size, sequence_length, hidden_size)
-            decoder_attentions: (batch_size, num_heads, sequence_length, sequence_length)
-            cross_attentions: (batch_size, num_heads, sequence_length, sequence_length)
-        """
         output_attentions = output_attentions if output_attentions is not None else self.model.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.model.config.output_hidden_states
@@ -303,18 +259,14 @@ class BARTDecoder(nn.Module):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-
         logits = self.model.lm_head(outputs[0])
-
         loss = None
         if labels is not None:
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
             loss = loss_fct(logits.view(-1, self.model.config.vocab_size), labels.view(-1))
-
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
-
         return ModelOutput(
             loss=loss,
             logits=logits,
@@ -326,11 +278,6 @@ class BARTDecoder(nn.Module):
 
     @staticmethod
     def resize_bart_abs_pos_emb(weight: torch.Tensor, max_length: int) -> torch.Tensor:
-        """
-        Resize position embeddings
-        Truncate if sequence length of Bart backbone is greater than given max_length,
-        else interpolate to max_length
-        """
         if weight.shape[0] > max_length:
             weight = weight[:max_length, ...]
         else:
@@ -420,11 +367,7 @@ class DonutModel(PreTrainedModel):
         self.decoder = BARTDecoder(
             max_position_embeddings=self.config.max_position_embeddings,
             decoder_layer=self.config.decoder_layer,
-            # ================= THAY ĐỔI 4: TRUYỀN TÊN MÔ HÌNH VÀO DECODER =================
-            # Đảm bảo rằng tên mô hình từ config được truyền vào BARTDecoder
-            # để nó có thể tải đúng mô hình pre-train tiếng Việt.
             name_or_path=self.config.name_or_path,
-            # ==============================================================================
         )
 
     def forward(self, image_tensors: torch.Tensor, decoder_input_ids: torch.Tensor, decoder_labels: torch.Tensor):
