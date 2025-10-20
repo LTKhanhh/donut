@@ -115,14 +115,10 @@ class BARTDecoder(nn.Module):
         self.decoder_layer = decoder_layer
         self.max_position_embeddings = max_position_embeddings
 
-        # ================== SỬA LỖI LOGIC TẠI ĐÂY ==================
-        # Xử lý trường hợp `name_or_path` là chuỗi rỗng "" từ config của donut-base.
-        # Đảm bảo nó luôn mặc định là "vinai/bartpho-word" trong trường hợp này.
         if not name_or_path or name_or_path == "":
              self.name_or_path = "vinai/bartpho-word"
         else:
              self.name_or_path = name_or_path
-        # ==========================================================
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.name_or_path)
         bart_config = MBartConfig.from_pretrained(self.name_or_path)
@@ -438,15 +434,18 @@ class DonutModel(PreTrainedModel):
         *model_args,
         **kwargs,
     ):
+        # ================== SỬA LỖI TypeError TẠI ĐÂY ==================
+        # Đặt giá trị `ignore_mismatched_sizes` vào trong kwargs.
+        # Thao tác này đảm bảo tham số chỉ được truyền một lần duy nhất,
+        # ngay cả khi nó được gọi từ một file khác.
+        kwargs['ignore_mismatched_sizes'] = True
+        
         model = super(DonutModel, cls).from_pretrained(
             pretrained_model_name_or_path, 
             *model_args,
-            # Bỏ qua các trọng số không khớp của decoder cũ (ví dụ: embed_tokens, lm_head)
-            # Điều này cho phép Encoder được tải đúng, trong khi Decoder sẽ được khởi tạo
-            # với trọng số chính xác từ `vinai/bartpho-word` trong `BARTDecoder.__init__`
-            ignore_mismatched_sizes=True,
             **kwargs
         )
+        # =============================================================
 
         max_length = kwargs.get("max_length", model.config.max_position_embeddings)
         if (
