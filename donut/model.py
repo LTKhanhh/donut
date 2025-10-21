@@ -115,50 +115,41 @@ class BARTDecoder(nn.Module):
         self.decoder_layer = decoder_layer
         self.max_position_embeddings = max_position_embeddings
 
-        # ================== THAY ĐỔI QUAN TRỌNG NHẤT ==================
-        # Sử dụng `vinai/bartpho-large` (1024-dim) thay vì `vinai/bartpho-word` (768-dim)
-        # để tương thích với `donut-base` (1024-dim)
+        # ================== SỬA LỖI LOGIC TẠI ĐÂY ==================
+        # Xử lý trường hợp `name_or_path` là chuỗi rỗng "" từ config của donut-base.
+        # Đảm bảo nó luôn mặc định là "vinai/bartpho-large" trong trường hợp này.
         if not name_or_path or name_or_path == "":
              self.name_or_path = "vinai/bartpho-large"
         else:
              self.name_or_path = name_or_path
-        # =============================================================
+        # ==========================================================
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.name_or_path)
-        # Tải config từ `vinai/bartpho-large` để lấy đúng d_model=1024
-        bart_config = MBartConfig.from_pretrained(self.name_or_path) 
+        bart_config = MBartConfig.from_pretrained(self.name_or_path)
 
         bart_config.is_decoder = True
         bart_config.is_encoder_decoder = False
         bart_config.add_cross_attention = True
-        
-        # Ghi đè các tham số từ config của Donut (nếu cần, nhưng giữ nguyên d_model=1024)
         bart_config.decoder_layers = self.decoder_layer
         bart_config.max_position_embeddings = self.max_position_embeddings
         
         self.add_special_tokens(["<sep/>"])
         bart_config.vocab_size = len(self.tokenizer)
 
-        # Khởi tạo mô hình Decoder với config đã được tùy chỉnh
+        # Chỉ khởi tạo cấu trúc, không tải trọng số ở đây
         self.model = MBartForCausalLM(config=bart_config)
         self.model.forward = self.forward
         self.model.config.is_encoder_decoder = True
         self.model.model.decoder.embed_tokens.padding_idx = self.tokenizer.pad_token_id
         self.model.prepare_inputs_for_generation = self.prepare_inputs_for_inference
         
-        # Tải trọng số từ `vinai/bartpho-large`
-        print(f"Initializing Donut decoder from pretrained BART model: {self.name_or_path}")
-        bart_state_dict = MBartForCausalLM.from_pretrained(self.name_or_path).state_dict()
-        
-        # Resize position embedding nếu cần
-        if bart_state_dict["model.decoder.embed_positions.weight"].shape[0] != self.max_position_embeddings + 2:
-            bart_state_dict["model.decoder.embed_positions.weight"] = self.resize_bart_abs_pos_emb(
-                bart_state_dict["model.decoder.embed_positions.weight"],
-                self.max_position_embeddings + 2,
-            )
-        
-        # Nạp trọng số, `strict=False` sẽ bỏ qua các layer không liên quan
-        self.model.load_state_dict(bart_state_dict, strict=False)
+        # === XÓA BỎ KHỐI TẢI TRỌNG SỐ Ở ĐÂY ===
+        # print(f"Initializing Donut decoder from pretrained BART model: {self.name_or_path}")
+        # bart_state_dict = MBartForCausalLM.from_pretrained(self.name_or_path).state_dict()
+        # ...
+        # self.model.load_state_dict(bart_state_dict, strict=False)
+        # === KẾT THÚC XÓA BỎ ===
+
 
     def add_special_tokens(self, list_of_tokens: List[str]):
         newly_added_num = self.tokenizer.add_special_tokens({"additional_special_tokens": sorted(set(list_of_tokens))})
@@ -451,12 +442,30 @@ class DonutModel(PreTrainedModel):
         
         # 2. Gọi hàm from_pretrained của class cha.
         #    Lệnh này sẽ tải trọng số của Encoder (donut-base), 
-        #    và bỏ qua trọng số của Decoder cũ do không khớp size.
+        #    và BỎ QUA trọng số của Decoder cũ do không khớp size (50265 vs 57525).
+        #    Decoder của `model` sẽ được khởi tạo ngẫu nhiên (do chúng ta đã xóa
+        #    phần load weights bên trong `BARTDecoder.__init__`).
         model = super(DonutModel, cls).from_pretrained(
             pretrained_model_name_or_path, 
             *model_args,
             **kwargs
         )
+
+        # 3. Tải trọng số cho Decoder một cách thủ công.
+        #    Bây giờ, chúng ta nạp trọng số của `vinai/bartpho-large` vào 
+        #    decoder đã được tạo với cấu trúc đúng.
+        print(f"Manually loading decoder weights from: {model.decoder.name_or_path}")
+        bart_state_dict = MBartForCausalLM.from_pretrained(model.decoder.name_or_path).state_dict()
+        
+        # Resize position embedding nếu cần
+        if bart_state_dict["model.decoder.embed_positions.weight"].shape[0] != model.decoder.max_position_embeddings + 2:
+            bart_state_dict["model.decoder.embed_positions.weight"] = model.decoder.resize_bart_abs_pos_emb(
+                bart_state_dict["model.decoder.embed_positions.weight"],
+                model.decoder.max_position_embeddings + 2,
+            )
+        
+        # Nạp trọng số vào decoder
+        model.decoder.model.load_state_dict(bart_state_dict, strict=False)
         # =======================================================
 
         max_length = kwargs.get("max_length", model.config.max_position_embeddings)
