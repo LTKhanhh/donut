@@ -66,31 +66,37 @@ def test(args):
     accs = []
 
     evaluator = JSONParseEvaluator()
-    dataset = load_dataset(args.dataset_name_or_path, split=args.split)
+    dataset = load_dataset("KhanhLT26/clean_test", split="test")
 
     for idx, sample in tqdm(enumerate(dataset), total=len(dataset)):
         ground_truth = json.loads(sample["ground_truth"])
 
-        if args.task_name == "docvqa":
-            output = pretrained_model.inference(
-                image=sample["image"],
-                prompt=f"<s_{args.task_name}><s_question>{ground_truth['gt_parses'][0]['question'].lower()}</s_question><s_answer>",
-            )["predictions"][0]
-        else:
-            output = pretrained_model.inference(image=sample["image"], prompt=f"<s_{args.task_name}>")["predictions"][0]
-            output = clean_structure(output)
-        if args.task_name == "rvlcdip":
-            gt = ground_truth["gt_parse"]
-            score = float(output["class"] == gt["class"])
-        elif args.task_name == "docvqa":
-            # Note: we evaluated the model on the official website.
-            # In this script, an exact-match based score will be returned instead
-            gt = ground_truth["gt_parses"]
-            answers = set([qa_parse["answer"] for qa_parse in gt])
-            score = float(output["answer"] in answers)
-        else:
-            gt = ground_truth["gt_parse"]
-            score = evaluator.cal_acc(output, gt)
+        # if args.task_name == "docvqa":
+        #     output = pretrained_model.inference(
+        #         image=sample["image"],
+        #         prompt=f"<s_{args.task_name}><s_question>{ground_truth['gt_parses'][0]['question'].lower()}</s_question><s_answer>",
+        #     )["predictions"][0]
+        # else:
+        #     output = pretrained_model.inference(image=sample["image"], prompt=f"<s_{args.task_name}>")["predictions"][0]
+        #     output = clean_structure(output)
+        # if args.task_name == "rvlcdip":
+        #     gt = ground_truth["gt_parse"]
+        #     score = float(output["class"] == gt["class"])
+        # elif args.task_name == "docvqa":
+        #     # Note: we evaluated the model on the official website.
+        #     # In this script, an exact-match based score will be returned instead
+        #     gt = ground_truth["gt_parses"]
+        #     answers = set([qa_parse["answer"] for qa_parse in gt])
+        #     score = float(output["answer"] in answers)
+        # else:
+        #     gt = ground_truth["gt_parse"]
+        #     score = evaluator.cal_acc(output, gt)
+
+        output = pretrained_model.inference(image=sample["image"], prompt=f"<s_vn_receipt>")["predictions"][0]
+        output = clean_structure(output)
+
+        gt = ground_truth["gt_parse"]
+        score = evaluator.cal_acc(output, gt)
 
         accs.append(score)
 
