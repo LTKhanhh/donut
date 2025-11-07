@@ -129,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_path", type=str, default=None)
     args, left_argv = parser.parse_known_args()
 
-    if args.task_name is None:
-        args.task_name = os.path.basename(args.dataset_name_or_path)
+    # if args.task_name is None:
+    #     args.task_name = os.path.basename(args.dataset_name_or_path)
 
     predictions = test(args)
