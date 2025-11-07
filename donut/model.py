@@ -477,24 +477,7 @@ class DonutModel(PreTrainedModel):
             bad_words_ids=[[self.decoder.tokenizer.unk_token_id]],
             return_dict_in_generate=True,
             output_attentions=return_attentions,
-            output_scores=True,
         )
-
-        # === THÊM ĐOẠN CODE LOGGING NÀY VÀO ĐÂY ===
-        if decoder_output.scores:
-            print("\n--- [DEBUG] Quá trình sinh token từng bước ---")
-            prompt_length = prompt_tensors.shape[1]
-            generated_ids = decoder_output.sequences[0] # Giả sử batch_size = 1
-
-            for i, step_scores in enumerate(decoder_output.scores):
-            # step_scores có shape [batch_size, vocab_size]
-                predicted_id = torch.argmax(step_scores[0], dim=-1).item()
-                predicted_token = self.decoder.tokenizer.decode(predicted_id)
-
-                print(f"Bước {i+1}: Dự đoán ID = {predicted_id}, Token = '{predicted_token}'")
-
-            print("--- [DEBUG] Kết thúc quá trình sinh token ---\n")
-        # ==========================================================
 
         output = {"predictions": list()}
         for seq in self.decoder.tokenizer.batch_decode(decoder_output.sequences):

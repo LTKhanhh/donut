@@ -17,6 +17,37 @@ from tqdm import tqdm
 
 from donut import DonutModel, JSONParseEvaluator, load_json, save_json
 
+chars = "ảáãàạăằặẳẵẳâầấậẫẩơớờợởỡòóọỏõèéẹẻẽêềếểễệôồốổỗộúùụủũưừứữửựíìịỉĩýỵỷỳỹđ"
+chars_upper = chars.upper()
+all_chars = chars + chars_upper
+
+
+def clean_value(text):
+    if not isinstance(text, str):
+        return text
+
+    # Xóa space quanh ký tự có dấu
+    for ch in all_chars:
+        text = re.sub(rf'\s*{ch}\s*', ch, text)
+    # Xóa space quanh <sp>
+    text = re.sub(r'\s*<sp>\s*', '<sp>', text)
+    # Thay <sp> thành khoảng trắng
+    text = text.replace('<sp>', ' ')
+    return text
+
+# --- Hàm đệ quy để xử lý toàn bộ value trong dict (kể cả nested) ---
+def clean_structure(obj):
+    """Đệ quy xử lý toàn bộ dict hoặc list."""
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            cleaned[k] = clean_structure(v)
+        return cleaned
+    elif isinstance(obj, list):
+        return [clean_structure(item) for item in obj]
+    else:
+        return clean_value(obj)
+
 
 def test(args):
     pretrained_model = DonutModel.from_pretrained(args.pretrained_model_name_or_path)
@@ -47,7 +78,7 @@ def test(args):
             )["predictions"][0]
         else:
             output = pretrained_model.inference(image=sample["image"], prompt=f"<s_{args.task_name}>")["predictions"][0]
-
+            output = clean_structure(output)
         if args.task_name == "rvlcdip":
             gt = ground_truth["gt_parse"]
             score = float(output["class"] == gt["class"])
