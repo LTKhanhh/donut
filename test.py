@@ -92,6 +92,8 @@ def test(args):
             gt = ground_truth["gt_parse"]
             score = evaluator.cal_acc(output, gt)
 
+        print("output" + output)
+        print("gt" + gt)
         # output = pretrained_model.inference(image=sample["image"], prompt=f"<s_{args.task_name}>")["predictions"][0]
         # output = clean_structure(output)
 
